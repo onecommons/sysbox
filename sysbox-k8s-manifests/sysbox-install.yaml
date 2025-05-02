@@ -38,6 +38,27 @@ metadata:
 data:
   SYSBOX_MGR_CONFIG: ""
   SYSBOX_FS_CONFIG: ""
+  sysbox-install.sh: |
+    #!/bin/bash
+
+    SERVICE_FILE="/mnt/host/etc/systemd/system/kubelet.service"
+    ENV_LINE="EnvironmentFile=-/etc/default/kubelet"
+
+    if [[ -f "$SERVICE_FILE" ]]; then
+      if ! grep -qF "$ENV_LINE" "$SERVICE_FILE"; then
+        sed -i "/\[Service\]/a $ENV_LINE" $SERVICE_FILE
+        if [[ $? -eq 0 ]]; then
+          echo "Inserted '$ENV_LINE' into the [Service] section of $SERVICE_FILE."
+        else
+          echo "Failed to insert '$ENV_LINE' into $SERVICE_FILE."
+        fi
+      else
+        echo "'$ENV_LINE' already exists in $SERVICE_FILE."
+      fi
+    else
+      echo "Service file $SERVICE_FILE not found."
+    fi
+    /opt/sysbox/scripts/sysbox-deploy-k8s.sh ce install
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -63,9 +84,9 @@ spec:
         effect: "NoSchedule"
       containers:
       - name: sysbox-deploy-k8s
-        image: registry.nestybox.com/nestybox/sysbox-deploy-k8s:v0.6.6-0
+        image: registry.nestybox.com/nestybox/sysbox-deploy-k8s:v0.6.5-0.1
         imagePullPolicy: Always
-        command: [ "bash", "-c", "/opt/sysbox/scripts/sysbox-deploy-k8s.sh ce install" ]
+        command: [ "bash", "-c", "/mnt/sysbox-config/sysbox-install.sh" ]
         env:
         - name: NODE_NAME
           valueFrom:
@@ -116,7 +137,17 @@ spec:
           mountPath: /mnt/host/run
         - name: host-var-lib
           mountPath: /mnt/host/var/lib
+        - mountPath: /mnt/sysbox-config/sysbox-install.sh
+          name: sysbox-config
+          subPath: sysbox-install.sh
       volumes:
+        - name: sysbox-config
+          configMap:
+            defaultMode: 0554
+            name: sysbox-operational-attributes
+            items:
+            - key: sysbox-install.sh
+              path: sysbox-install.sh
         - name: host-etc
           hostPath:
             path: /etc
